@@ -40,7 +40,10 @@ async function updatePreference(topic, source, delta) {
 
 function decodeHTML(text) {
   const doc = new DOMParser().parseFromString(text, 'text/html');
-  return doc.documentElement.textContent;
+  let decoded = doc.documentElement.textContent;
+  // Remove trailing source names like "- The Washington Post"
+  decoded = decoded.replace(/\s[-|]\s[^-|]+$/, '').trim();
+  return decoded;
 }
 
 function ActionMenu({ article, onClose, onHide }) {
