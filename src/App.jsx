@@ -163,7 +163,7 @@ function ArticleCard({ article, onHide }) {
               onClick={handleDislike}
               className={`text-lg transition-transform hover:scale-110 ${reaction === 'dislike' ? 'opacity-100' : 'opacity-40'}`}
             >👎</button>
-            <div className="relative ml-auto">
+            <div className="static ml-auto">
               <button
                 onClick={() => setMenuOpen(v => !v)}
                 className="text-gray-500 text-xl px-1 hover:text-gray-300"
