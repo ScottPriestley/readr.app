@@ -115,6 +115,11 @@ function ActionMenu({ article, onClose, onHide }) {
   );
 }
 
+function decodeHTML(text) {
+  const doc = new DOMParser().parseFromString(text, 'text/html');
+  return doc.documentElement.textContent;
+}
+
 function ArticleCard({ article, onHide }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [reaction, setReaction] = useState(null);
@@ -142,11 +147,13 @@ function ArticleCard({ article, onHide }) {
         <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
           {article.source || 'Unknown Source'}
         </p>
-        <h2 className="text-base font-semibold text-gray-900 leading-snug mb-2">
-          {article.title}
-        </h2>
+        <a href={article.url} target="_blank" rel="noopener noreferrer">
+          <h2 className="text-base font-semibold text-gray-900 leading-snug mb-2 hover:text-blue-600">
+            {decodeHTML(article.title)}
+          </h2>
+        </a>
         {article.summary && (
-          <p className="text-sm text-gray-600 leading-relaxed mb-3">{article.summary}</p>
+          <p className="text-sm text-gray-600 leading-relaxed mb-3">{article.summary.slice(0, 150)}{article.summary.length > 150 ? '...' : ''}</p>
         )}
         <div className="flex items-center justify-between pt-2 border-t border-gray-100 relative">
           <div className="flex gap-3">
