@@ -17,20 +17,14 @@ export default async function handler(req, res) {
     const sourcePrefs = prefs?.filter(p => p.source && p.preference_score > 0).map(p => `${p.source}(${p.preference_score.toFixed(1)})`).join(', ') || 'none';
     const avoidSources = prefs?.filter(p => p.source && p.preference_score <= -0.5).map(p => p.source).join(', ') || 'none';
 
-    const articleList = articles.map((a, i) => `${i+1}. ID:${a.id} | "${a.title}" | ${a.source} | topics:${a.topics?.join(',')}`).join('\n');
+    const articleList = articles.slice(0, 20).map((a, i) => `${i+1}|${a.id}|${a.title}|${a.source}`).join('\n');
 
-    const prompt = `You are a news feed personalization algorithm. Rank these articles for a user based on their preferences.
+    const prompt = `Rank these news articles for someone who likes these topics: ${topicPrefs} and these sources: ${sourcePrefs}.
 
-User preferences:
-- Favourite topics: ${topicPrefs}
-- Favourite sources: ${sourcePrefs}  
-- Avoid sources: ${avoidSources}
-
-Articles to rank:
+Articles (format: number|id|title|source):
 ${articleList}
 
-Instructions: Return ONLY a valid JSON array containing the article IDs in order from most to least relevant. Example format: ["uuid1","uuid2","uuid3"]
-Do not include any other text, explanation, or markdown.`;
+Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","id3"]`;
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -40,9 +34,12 @@ Do not include any other text, explanation, or markdown.`;
       },
       body: JSON.stringify({
         model: 'google/gemini-flash-1.5',
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: 'You are a news ranking algorithm. Always respond with only a valid JSON array of IDs.' },
+          { role: 'user', content: prompt }
+        ],
         max_tokens: 2000,
-        temperature: 0.1
+        temperature: 0
       })
     });
 
