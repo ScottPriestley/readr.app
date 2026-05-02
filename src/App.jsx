@@ -1,3 +1,4 @@
+import InfiniteScroll from 'react-infinite-scroll-component';
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
@@ -188,18 +189,42 @@ function ArticleCard({ article, onHide }) {
 function App() {
   const [articles, setArticles] = useState([]);
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 10;
+
+  async function fetchArticles(pageNum) {
+    const from = pageNum * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    let { data, error } = await supabase
+      .from('articles')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
+    if (data.length < PAGE_SIZE) setHasMore(false);
+    setArticles(prev => {
+      const existingIds = new Set(prev.map(a => a.id));
+      const newArticles = data.filter(a => !existingIds.has(a.id));
+      return [...prev, ...newArticles];
+    });
+  }
 
   useEffect(() => {
-    async function fetchArticles() {
-      let { data, error } = await supabase
-        .from('articles')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) setError(error.message);
-      else setArticles(data);
-    }
-    fetchArticles();
+    fetchArticles(0);
   }, []);
+
+  function loadMore() {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchArticles(nextPage);
+  }
 
   function hideArticle(id) {
     setArticles(prev => prev.filter(a => a.id !== id));
@@ -210,13 +235,21 @@ function App() {
       <div className="max-w-md mx-auto px-3 py-4">
         <h1 className="text-2xl font-bold text-gray-800 mb-4 px-1">For You</h1>
         {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-        {articles.length === 0 ? (
-          <p className="text-gray-400 text-center mt-20">No articles yet.</p>
-        ) : (
-          articles.map(article => (
+        <InfiniteScroll
+          dataLength={articles.length}
+          next={loadMore}
+          hasMore={hasMore}
+          loader={
+            <div className="text-center py-4 text-gray-400 text-sm">Loading more...</div>
+          }
+          endMessage={
+            <div className="text-center py-4 text-gray-400 text-sm">You're all caught up!</div>
+          }
+        >
+          {articles.map(article => (
             <ArticleCard key={article.id} article={article} onHide={hideArticle} />
-          ))
-        )}
+          ))}
+        </InfiniteScroll>
       </div>
     </div>
   );
