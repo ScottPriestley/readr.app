@@ -141,7 +141,7 @@ function ArticleCard({ article, onHide }) {
   }
 
   return (
-    <div className="bg-gray-800 rounded-2xl shadow-md mb-3 overflow-hidden relative">
+    <div className="bg-gray-800 rounded-2xl shadow-md mb-3 overflow-visible relative">
       <div className="flex p-4 gap-3">
         <div className="flex-1 flex flex-col justify-between">
           <div>
