@@ -43,7 +43,21 @@ Return ONLY a JSON array of the article IDs in ranked order. Example: ["id1","id
     });
 
     const aiResult = await response.json();
-    const rawText = aiResult.choices?.[0]?.message?.content || '[]';
+    if (!response.ok || !aiResult.choices?.[0]?.message?.content) {
+  return res.status(200).json({
+    ranked: [],
+    debug: {
+      openRouterStatus: response.status,
+      openRouterOk: response.ok,
+      openRouterResponse: aiResult,
+      topicPrefs,
+      sourcePrefs,
+      articleCount: articles.length
+    }
+  });
+}
+
+const rawText = aiResult.choices[0].message.content;
     const cleanText = rawText.replace(/```json|```/g, '').trim();
 
     let ranked = [];
