@@ -130,14 +130,12 @@ function ArticleCard({ article, onHide }) {
     setReaction('like');
     await recordInteraction(article.id, 'like');
     if (article.topics?.[0]) await updatePreference(article.topics[0], null, 0.2);
-    if (article.source) await updatePreference(null, article.source, 0.2);
   }
 
   async function handleDislike() {
     setReaction('dislike');
     await recordInteraction(article.id, 'dislike');
     if (article.topics?.[0]) await updatePreference(article.topics[0], null, -0.2);
-    if (article.source) await updatePreference(null, article.source, -0.2);
   }
 
   return (
