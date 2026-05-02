@@ -33,7 +33,7 @@ Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.1-8b-instruct:free',
+        model: 'openai/gpt-4o-mini',
         messages: [
           { role: 'system', content: 'You are a news ranking algorithm. Always respond with only a valid JSON array of IDs.' },
           { role: 'user', content: prompt }
