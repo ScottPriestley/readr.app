@@ -107,7 +107,7 @@ function ActionMenu({ article, onClose, onHide }) {
   return (
     <div
       ref={menuRef}
-      className="absolute right-0 bottom-10 bg-gray-800 rounded-xl shadow-xl border border-gray-700 z-50 w-64 overflow-hidden"
+      className="absolute right-3 bottom-12 bg-gray-800 rounded-xl shadow-xl border border-gray-700 z-[9999] w-[calc(100vw-2rem)] max-w-64 overflow-hidden"
     >
       {options.map(opt => (
         <button
