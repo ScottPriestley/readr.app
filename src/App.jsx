@@ -105,13 +105,13 @@ function ActionMenu({ article, onClose, onHide }) {
   return (
     <div
       ref={menuRef}
-      className="absolute right-0 bottom-10 bg-white rounded-xl shadow-xl border border-gray-100 z-50 w-64 overflow-hidden"
+      className="absolute right-0 bottom-10 bg-gray-800 rounded-xl shadow-xl border border-gray-700 z-50 w-64 overflow-hidden"
     >
       {options.map(opt => (
         <button
           key={opt.label}
           onClick={opt.action}
-          className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-50 border-b border-gray-50 last:border-0 ${opt.danger ? 'text-red-500' : 'text-gray-700'}`}
+          className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-700 border-b border-gray-700 last:border-0 ${opt.danger ? 'text-red-400' : 'text-gray-200'}`}
         >
           {opt.label}
         </button>
@@ -139,7 +139,7 @@ function ArticleCard({ article, onHide }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm mb-3 overflow-hidden relative">
+    <div className="bg-gray-800 rounded-2xl shadow-md mb-3 overflow-hidden relative">
       {article.image_url ? (
         <img
           src={article.image_url}
@@ -148,7 +148,7 @@ function ArticleCard({ article, onHide }) {
           onError={e => { e.target.style.display = 'none'; }}
         />
       ) : (
-        <div className="w-full h-32 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="w-full h-32 bg-gradient-to-br from-gray-700 to-gray-600 flex items-center justify-center">
           <span className="text-4xl">
             {article.topics?.[0] === 'technology' ? '💻' :
              article.topics?.[0] === 'science' ? '🔬' :
@@ -160,34 +160,34 @@ function ArticleCard({ article, onHide }) {
         </div>
       )}
       <div className="p-4">
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">
+        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
           {article.source || 'Unknown Source'}
         </p>
         <a href={article.url} target="_blank" rel="noopener noreferrer">
-          <h2 className="text-base font-semibold text-gray-900 leading-snug mb-2 hover:text-blue-600">
+          <h2 className="text-base font-semibold text-white leading-snug mb-2 hover:text-blue-400">
             {decodeHTML(article.title)}
           </h2>
         </a>
         {article.summary && (
-          <p className="text-sm text-gray-600 leading-relaxed mb-3">
+          <p className="text-sm text-gray-400 leading-relaxed mb-3">
             {article.summary.slice(0, 150)}{article.summary.length > 150 ? '...' : ''}
           </p>
         )}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-100 relative">
+        <div className="flex items-center justify-between pt-2 border-t border-gray-700 relative">
           <div className="flex gap-3">
             <button
               onClick={handleLike}
-              className={`text-xl transition-transform hover:scale-110 ${reaction === 'like' ? 'opacity-100' : 'opacity-50'}`}
+              className={`text-xl transition-transform hover:scale-110 ${reaction === 'like' ? 'opacity-100' : 'opacity-40'}`}
             >👍</button>
             <button
               onClick={handleDislike}
-              className={`text-xl transition-transform hover:scale-110 ${reaction === 'dislike' ? 'opacity-100' : 'opacity-50'}`}
+              className={`text-xl transition-transform hover:scale-110 ${reaction === 'dislike' ? 'opacity-100' : 'opacity-40'}`}
             >👎</button>
           </div>
           <div className="relative">
             <button
               onClick={() => setMenuOpen(v => !v)}
-              className="text-gray-400 text-xl px-2 hover:text-gray-600"
+              className="text-gray-500 text-xl px-2 hover:text-gray-300"
             >⋯</button>
             {menuOpen && (
               <ActionMenu
@@ -265,16 +265,16 @@ function App() {
   }
 
   return (
-    <div className="bg-gray-100 min-h-screen">
+    <div className="bg-gray-900 min-h-screen">
       <div className="max-w-md mx-auto px-3 py-4">
-        <h1 className="text-2xl font-bold text-gray-800 mb-4 px-1">For You</h1>
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+        <h1 className="text-2xl font-bold text-white mb-4 px-1">For You</h1>
+        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
         <InfiniteScroll
           dataLength={articles.length}
           next={loadMore}
           hasMore={hasMore}
-          loader={<div className="text-center py-4 text-gray-400 text-sm">Loading more...</div>}
-          endMessage={<div className="text-center py-4 text-gray-400 text-sm">You're all caught up!</div>}
+          loader={<div className="text-center py-4 text-gray-500 text-sm">Loading more...</div>}
+          endMessage={<div className="text-center py-4 text-gray-500 text-sm">You're all caught up!</div>}
         >
           {articles.map(article => (
             <ArticleCard key={article.id} article={article} onHide={hideArticle} />
