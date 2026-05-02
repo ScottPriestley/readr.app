@@ -140,64 +140,50 @@ function ArticleCard({ article, onHide }) {
 
   return (
     <div className="bg-gray-800 rounded-2xl shadow-md mb-3 overflow-hidden relative">
-      {article.image_url ? (
-        <img
-          src={article.image_url}
-          alt={article.title}
-          className="w-full h-48 object-cover"
-          onError={e => { e.target.style.display = 'none'; }}
-        />
-      ) : (
-        <div className="w-full h-32 bg-gradient-to-br from-gray-700 to-gray-600 flex items-center justify-center">
-          <span className="text-4xl">
-            {article.topics?.[0] === 'technology' ? '💻' :
-             article.topics?.[0] === 'science' ? '🔬' :
-             article.topics?.[0] === 'space' ? '🚀' :
-             article.topics?.[0] === 'health' ? '🏃' :
-             article.topics?.[0] === 'food' ? '🍕' :
-             article.topics?.[0] === 'news' ? '📰' : '📄'}
-          </span>
-        </div>
-      )}
-      <div className="p-4">
-        <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
-          {article.source || 'Unknown Source'}
-        </p>
-        <a href={article.url} target="_blank" rel="noopener noreferrer">
-          <h2 className="text-base font-semibold text-white leading-snug mb-2 hover:text-blue-400">
-            {decodeHTML(article.title)}
-          </h2>
-        </a>
-        {article.summary && (
-          <p className="text-sm text-gray-400 leading-relaxed mb-3">
-            {article.summary.slice(0, 150)}{article.summary.length > 150 ? '...' : ''}
-          </p>
-        )}
-        <div className="flex items-center justify-between pt-2 border-t border-gray-700 relative">
-          <div className="flex gap-3">
+      <div className="flex p-4 gap-3">
+        <div className="flex-1 flex flex-col justify-between">
+          <div>
+            <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
+              {article.source || 'Unknown Source'}
+            </p>
+            <a href={article.url} target="_blank" rel="noopener noreferrer">
+              <h2 className="text-sm font-semibold text-white leading-snug hover:text-blue-400">
+                {decodeHTML(article.title)}
+              </h2>
+            </a>
+          </div>
+          <div className="flex items-center gap-3 mt-3">
             <button
               onClick={handleLike}
-              className={`text-xl transition-transform hover:scale-110 ${reaction === 'like' ? 'opacity-100' : 'opacity-40'}`}
+              className={`text-lg transition-transform hover:scale-110 ${reaction === 'like' ? 'opacity-100' : 'opacity-40'}`}
             >👍</button>
             <button
               onClick={handleDislike}
-              className={`text-xl transition-transform hover:scale-110 ${reaction === 'dislike' ? 'opacity-100' : 'opacity-40'}`}
+              className={`text-lg transition-transform hover:scale-110 ${reaction === 'dislike' ? 'opacity-100' : 'opacity-40'}`}
             >👎</button>
-          </div>
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen(v => !v)}
-              className="text-gray-500 text-xl px-2 hover:text-gray-300"
-            >⋯</button>
-            {menuOpen && (
-              <ActionMenu
-                article={article}
-                onClose={() => setMenuOpen(false)}
-                onHide={onHide}
-              />
-            )}
+            <div className="relative ml-auto">
+              <button
+                onClick={() => setMenuOpen(v => !v)}
+                className="text-gray-500 text-xl px-1 hover:text-gray-300"
+              >⋯</button>
+              {menuOpen && (
+                <ActionMenu
+                  article={article}
+                  onClose={() => setMenuOpen(false)}
+                  onHide={onHide}
+                />
+              )}
+            </div>
           </div>
         </div>
+        {article.image_url && (
+          <img
+            src={article.image_url}
+            alt={article.title}
+            className="w-24 h-24 object-cover rounded-xl flex-shrink-0"
+            onError={e => { e.target.style.display = 'none'; }}
+          />
+        )}
       </div>
     </div>
   );
