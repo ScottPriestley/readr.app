@@ -211,78 +211,72 @@ function App() {
   const PAGE_SIZE = 10;
 
   async function fetchArticles(pageNum) {
-    const from = pageNum * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+  const from = pageNum * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
 
-    const [{ data: articles, error }, { data: prefs }] = await Promise.all([
-      supabase.from('articles').select('*').order('created_at', { ascending: false }).range(from, to),
-      supabase.from('user_preferences').select('*').eq('user_id', USER_ID)
-    ]);
+  const [{ data: articlesData, error }, { data: prefs }] = await Promise.all([
+    supabase.from('articles').select('*').order('created_at', { ascending: false }).range(from, to),
+    supabase.from('user_preferences').select('*').eq('user_id', USER_ID)
+  ]);
 
-    if (error) { setError(error.message); return; }
+  if (error) { setError(error.message); return; }
 
-    const topicScores = {};
-    const sourceScores = {};
-    if (prefs) {
-      for (const p of prefs) {
-        if (p.topic) topicScores[p.topic] = p.preference_score;
-        if (p.source) sourceScores[p.source] = p.preference_score;
+  // Basic scoring as fallback
+  const topicScores = {};
+  const sourceScores = {};
+  if (prefs) {
+    for (const p of prefs) {
+      if (p.topic) topicScores[p.topic] = p.preference_score;
+      if (p.source) sourceScores[p.source] = p.preference_score;
+    }
+  }
+
+  const filtered = articlesData.filter(a => (sourceScores[a.source] ?? 0) > -1);
+
+  // Try AI ranking if user has interactions
+  try {
+    const hasInteractions = prefs && prefs.length > 0;
+    if (hasInteractions) {
+      const rankRes = await fetch(`/api/rank?user_id=${USER_ID}`);
+      const { ranked } = await rankRes.json();
+
+      if (ranked && ranked.length > 0) {
+        const articleMap = Object.fromEntries(filtered.map(a => [a.id, a]));
+        const aiRanked = ranked
+          .filter(id => articleMap[id])
+          .map(id => articleMap[id]);
+        // Add any articles not in AI ranking at the end
+        const aiRankedIds = new Set(ranked);
+        const remainder = filtered.filter(a => !aiRankedIds.has(a.id));
+        const final = [...aiRanked, ...remainder];
+
+        if (final.length < PAGE_SIZE) setHasMore(false);
+        setArticles(prev => {
+          const existingIds = new Set(prev.map(a => a.id));
+          return [...prev, ...final.filter(a => !existingIds.has(a.id))];
+        });
+        return;
       }
     }
-
-    const scored = articles
-      .filter(a => (sourceScores[a.source] ?? 0) > -1)
-      .map(a => {
-        let score = 0;
-        if (a.topics) {
-          for (const t of a.topics) score += topicScores[t] ?? 0;
-        }
-        score += sourceScores[a.source] ?? 0;
-        return { ...a, _score: score };
-      })
-      .sort((a, b) => b._score - a._score);
-
-    if (scored.length < PAGE_SIZE) setHasMore(false);
-    setArticles(prev => {
-      const existingIds = new Set(prev.map(a => a.id));
-      const newArticles = scored.filter(a => !existingIds.has(a.id));
-      return [...prev, ...newArticles];
-    });
+  } catch (e) {
+    console.log('AI ranking failed, using fallback', e);
   }
 
-  useEffect(() => {
-    fetchArticles(0);
-  }, []);
+  // Fallback: basic preference scoring
+  const scored = filtered
+    .map(a => {
+      let score = 0;
+      if (a.topics) for (const t of a.topics) score += topicScores[t] ?? 0;
+      score += sourceScores[a.source] ?? 0;
+      return { ...a, _score: score };
+    })
+    .sort((a, b) => b._score - a._score);
 
-  function loadMore() {
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchArticles(nextPage);
-  }
-
-  function hideArticle(id) {
-    setArticles(prev => prev.filter(a => a.id !== id));
-  }
-
-  return (
-    <div className="bg-gray-900 min-h-screen">
-      <div className="max-w-md mx-auto px-3 py-4">
-        <h1 className="text-2xl font-bold text-white mb-4 px-1">For You</h1>
-        {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
-        <InfiniteScroll
-          dataLength={articles.length}
-          next={loadMore}
-          hasMore={hasMore}
-          loader={<div className="text-center py-4 text-gray-500 text-sm">Loading more...</div>}
-          endMessage={<div className="text-center py-4 text-gray-500 text-sm">You're all caught up!</div>}
-        >
-          {articles.map(article => (
-            <ArticleCard key={article.id} article={article} onHide={hideArticle} />
-          ))}
-        </InfiniteScroll>
-      </div>
-    </div>
-  );
+  if (scored.length < PAGE_SIZE) setHasMore(false);
+  setArticles(prev => {
+    const existingIds = new Set(prev.map(a => a.id));
+    return [...prev, ...scored.filter(a => !existingIds.has(a.id))];
+  });
 }
 
 export default App;
