@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       supabase.from('articles').select('id, title, source, topics').order('created_at', { ascending: false }).limit(50)
     ]);
 
-    if (!articles || articles.length === 0) return res.status(200).json({ ranked: [] });
+    if (!articles || articles.length === 0) return res.status(200).json({ debug: 'no articles found', ranked: [] });
 
     const liked = interactions?.filter(i => i.interaction_type === 'like').map(i => i.articles?.title).filter(Boolean).slice(0, 10).join('; ') || 'none';
     const disliked = interactions?.filter(i => i.interaction_type === 'dislike').map(i => i.articles?.title).filter(Boolean).slice(0, 10).join('; ') || 'none';
@@ -48,10 +48,19 @@ Return ONLY a JSON array of IDs like: ["id1","id2"]`;
     const aiResult = await response.json();
     const rawText = aiResult.choices?.[0]?.message?.content || '[]';
     const cleanText = rawText.replace(/```json|```/g, '').trim();
-    const ranked = JSON.parse(cleanText);
-    res.status(200).json({ ranked });
+    
+    return res.status(200).json({ 
+      debug: {
+        articleCount: articles.length,
+        liked,
+        topicPrefs,
+        rawText,
+        cleanText,
+        hasKey: !!process.env.OPENROUTER_KEY
+      }
+    });
+
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 }
