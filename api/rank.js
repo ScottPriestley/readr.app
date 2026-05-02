@@ -18,12 +18,22 @@ export default async function handler(req, res) {
 
     const articleList = articles.map((a, i) => `${i+1}. ${a.id} | "${a.title}" | ${a.source}`).join('\n');
 
-    const prompt = `Rank these news articles for someone who likes these topics: ${topicPrefs} and these sources: ${sourcePrefs}.
+    const prompt = `You must rank the following ${articles.length} articles.
+
+User preferences:
+Liked topics: ${topicPrefs}
+Liked sources: ${sourcePrefs}
 
 Articles:
 ${articleList}
 
-Return ONLY a JSON array of the article IDs in ranked order. Example: ["id1","id2"]`;
+Rules:
+- Return every article ID exactly once.
+- Do not remove any articles.
+- Do not return an empty array.
+- Do not invent IDs.
+- Return only a valid JSON array of article IDs.
+- The array must contain exactly ${articles.length} IDs.`;
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
