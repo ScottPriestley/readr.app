@@ -8,23 +8,22 @@ export default async function handler(req, res) {
 
     const [{ data: prefs }, { data: articles }] = await Promise.all([
       supabase.from('user_preferences').select('*').eq('user_id', user_id),
-      supabase.from('articles').select('id, title, source, topics').order('created_at', { ascending: false }).limit(50)
+      supabase.from('articles').select('id, title, source, topics').order('created_at', { ascending: false }).limit(20)
     ]);
 
     if (!articles || articles.length === 0) return res.status(200).json({ ranked: [] });
 
     const topicPrefs = prefs?.filter(p => p.topic && p.preference_score > 0).map(p => `${p.topic}(${p.preference_score.toFixed(1)})`).join(', ') || 'none';
     const sourcePrefs = prefs?.filter(p => p.source && p.preference_score > 0).map(p => `${p.source}(${p.preference_score.toFixed(1)})`).join(', ') || 'none';
-    const avoidSources = prefs?.filter(p => p.source && p.preference_score <= -0.5).map(p => p.source).join(', ') || 'none';
 
-    const articleList = articles.slice(0, 20).map((a, i) => `${i+1}|${a.id}|${a.title}|${a.source}`).join('\n');
+    const articleList = articles.map((a, i) => `${i+1}. ${a.id} | "${a.title}" | ${a.source}`).join('\n');
 
     const prompt = `Rank these news articles for someone who likes these topics: ${topicPrefs} and these sources: ${sourcePrefs}.
 
-Articles (format: number|id|title|source):
+Articles:
 ${articleList}
 
-Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","id3"]`;
+Return ONLY a JSON array of the article IDs in ranked order. Example: ["id1","id2"]`;
 
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -35,7 +34,7 @@ Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a news ranking algorithm. Always respond with only a valid JSON array of IDs.' },
+          { role: 'system', content: 'You are a news ranking algorithm. Always respond with only a valid JSON array of IDs, nothing else.' },
           { role: 'user', content: prompt }
         ],
         max_tokens: 2000,
@@ -46,7 +45,7 @@ Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","
     const aiResult = await response.json();
     const rawText = aiResult.choices?.[0]?.message?.content || '[]';
     const cleanText = rawText.replace(/```json|```/g, '').trim();
-    
+
     let ranked = [];
     try {
       ranked = JSON.parse(cleanText);
@@ -54,7 +53,7 @@ Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","
       console.error('Failed to parse AI response:', rawText);
     }
 
-    res.status(200).json({ ranked, debug: { topicPrefs, sourcePrefs, rawText, articleCount: articles.length, firstArticle: articles[0] } });
+    res.status(200).json({ ranked, debug: { topicPrefs, sourcePrefs, rawText, articleCount: articles.length } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
