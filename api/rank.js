@@ -54,7 +54,7 @@ Reply with ONLY a JSON array of the IDs in ranked order. Example: ["id1","id2","
       console.error('Failed to parse AI response:', rawText);
     }
 
-    res.status(200).json({ ranked, debug: { topicPrefs, sourcePrefs, rawText: rawText.slice(0, 200) } });
+    res.status(200).json({ ranked, debug: { topicPrefs, sourcePrefs, rawText, articleCount: articles.length, firstArticle: articles[0] } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
