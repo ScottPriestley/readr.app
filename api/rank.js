@@ -98,7 +98,7 @@ try {
   ranked = articles.map(a => String(a.id));
 }
 
-    res.status(200).json({ ranked, debug: { topicPrefs, sourcePrefs, rawText, articleCount: articles.length } });
+   res.status(200).json({ ranked });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
