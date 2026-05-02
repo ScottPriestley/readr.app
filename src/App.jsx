@@ -41,8 +41,8 @@ async function updatePreference(topic, source, delta) {
 function decodeHTML(text) {
   const doc = new DOMParser().parseFromString(text, 'text/html');
   let decoded = doc.documentElement.textContent;
-  // Remove trailing source names like "- The Washington Post"
-  decoded = decoded.replace(/\s[-|]\s[^-|]+$/, '').trim();
+  // Remove trailing source names like "- The Washington Post" or "- ABC News - Breaking News"
+  decoded = decoded.replace(/\s[-|].*$/, '').trim();
   return decoded;
 }
 
@@ -179,14 +179,25 @@ function ArticleCard({ article, onHide }) {
             </div>
           </div>
         </div>
-        {article.image_url && (
-          <img
-            src={article.image_url}
-            alt={article.title}
-            className="w-24 h-24 object-cover rounded-xl flex-shrink-0"
-            onError={e => { e.target.style.display = 'none'; }}
-          />
-        )}
+        {article.image_url ? (
+  <img
+    src={article.image_url}
+    alt={article.title}
+    className="w-24 h-24 object-cover rounded-xl flex-shrink-0"
+    onError={e => { e.target.style.display = 'none'; }}
+  />
+) : (
+  <div className="w-24 h-24 rounded-xl flex-shrink-0 bg-gray-700 flex items-center justify-center">
+    <span className="text-3xl">
+      {article.topics?.[0] === 'technology' ? '💻' :
+       article.topics?.[0] === 'science' ? '🔬' :
+       article.topics?.[0] === 'space' ? '🚀' :
+       article.topics?.[0] === 'health' ? '🏃' :
+       article.topics?.[0] === 'food' ? '🍕' :
+       article.topics?.[0] === 'news' ? '📰' : '📄'}
+    </span>
+  </div>
+)}
       </div>
     </div>
   );
