@@ -71,11 +71,32 @@ const rawText = aiResult.choices[0].message.content;
     const cleanText = rawText.replace(/```json|```/g, '').trim();
 
     let ranked = [];
-    try {
-      ranked = JSON.parse(cleanText);
-    } catch(e) {
-      console.error('Failed to parse AI response:', rawText);
-    }
+try {
+  const parsed = JSON.parse(cleanText);
+
+  const validIds = new Set(articles.map(a => String(a.id)));
+  const seen = new Set();
+
+  if (Array.isArray(parsed)) {
+    ranked = parsed
+      .map(id => String(id))
+      .filter(id => {
+        if (!validIds.has(id)) return false;
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+  }
+
+  const missingIds = articles
+    .map(a => String(a.id))
+    .filter(id => !seen.has(id));
+
+  ranked = [...ranked, ...missingIds];
+} catch(e) {
+  console.error('Failed to parse AI response:', rawText);
+  ranked = articles.map(a => String(a.id));
+}
 
     res.status(200).json({ ranked, debug: { topicPrefs, sourcePrefs, rawText, articleCount: articles.length } });
   } catch (err) {
