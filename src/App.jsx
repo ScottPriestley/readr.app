@@ -191,7 +191,7 @@ function ArticleCard({ article, onHide }) {
                article.topics?.[0] === 'space' ? '🚀' :
                article.topics?.[0] === 'health' ? '🏃' :
                article.topics?.[0] === 'food' ? '🍕' :
-               article.topics?.[0] === 'religion' ? '📄' : }
+               article.topics?.[0] === 'religion' ? '🛐' : '📰'
             </span>
           </div>
         )}
