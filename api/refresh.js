@@ -39,44 +39,86 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
   try {
     return JSON.parse(text);
   } catch {
-    // If AI returns malformed JSON, fall back to ['news'] for all
     console.error('Topic inference failed to parse:', text);
     return {};
   }
 }
 
+async function fetchFromNewsAPI() {
+  const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=50&apiKey=${process.env.NEWSAPI_KEY}`;
+  const result = await fetchJSON(url);
+  if (!result || result.status !== 'ok') return [];
+
+  return result.articles
+    .filter(a => a.url && a.title)
+    .map(a => ({
+      url: a.url,
+      title: a.title,
+      summary: a.description || null,
+      image_url: a.urlToImage || null,
+      source: a.source?.name || 'Unknown',
+      publish_date: a.publishedAt || null,
+    }));
+}
+
+async function fetchFromTheNewsAPI() {
+  const url = `https://api.thenewsapi.com/v1/news/top?api_token=${process.env.THENEWSAPI_KEY}&language=en&limit=50`;
+  const result = await fetchJSON(url);
+  if (!result || !result.data) return [];
+
+  return result.data
+    .filter(a => a.url && a.title)
+    .map(a => ({
+      url: a.url,
+      title: a.title,
+      summary: a.description || null,
+      image_url: a.image_url || null,
+      source: a.source || 'Unknown',
+      publish_date: a.published_at || null,
+    }));
+}
+
 export default async function handler(req, res) {
   try {
-    const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=50&apiKey=${process.env.NEWSAPI_KEY}`;
-    const result = await fetchJSON(url);
+    // Fetch from both sources in parallel
+    const [newsAPIArticles, theNewsAPIArticles] = await Promise.all([
+      fetchFromNewsAPI(),
+      fetchFromTheNewsAPI(),
+    ]);
 
-    if (!result || result.status !== 'ok') {
-      return res.status(500).json({ error: 'Failed to fetch news', detail: result });
+    // Merge and deduplicate by URL
+    const seen = new Set();
+    const allArticles = [...newsAPIArticles, ...theNewsAPIArticles].filter(a => {
+      if (seen.has(a.url)) return false;
+      seen.add(a.url);
+      return true;
+    });
+
+    if (allArticles.length === 0) {
+      return res.status(500).json({ error: 'No articles fetched from any source' });
     }
 
     // Infer topics for all articles in one AI call
-    const topicMap = await inferTopics(result.articles);
+    const topicMap = await inferTopics(allArticles);
 
     let count = 0;
-    for (const item of result.articles) {
-      if (!item.url || !item.title) continue;
-
-      // Use inferred topics, fall back to ['news'] if title wasn't mapped
+    for (const item of allArticles) {
       const topics = topicMap[item.title] || ['news'];
-
       const { error } = await supabase.from('articles').upsert({
-        url: item.url,
-        title: item.title,
-        summary: item.description || null,
-        image_url: item.urlToImage || null,
-        source: item.source?.name || 'Unknown',
-        topics: topics,
-        publish_date: item.publishedAt || null,
+        ...item,
+        topics,
       }, { onConflict: 'url', ignoreDuplicates: true });
       if (!error) count++;
     }
 
-    res.status(200).json({ success: true, articles: count });
+    res.status(200).json({ 
+      success: true, 
+      articles: count,
+      sources: {
+        newsapi: newsAPIArticles.length,
+        thenewsapi: theNewsAPIArticles.length,
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
