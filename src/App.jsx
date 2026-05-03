@@ -104,22 +104,32 @@ function ActionMenu({ article, onClose, onHide }) {
     },
   ];
 
-  return (
-    <div
-      ref={menuRef}
-      className="absolute right-3 bottom-12 bg-gray-800 rounded-xl shadow-xl border border-gray-700 z-[9999] w-[calc(100vw-2rem)] max-w-64 overflow-hidden"
-    >
-      {options.map(opt => (
-        <button
-          key={opt.label}
-          onClick={opt.action}
-          className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-700 border-b border-gray-700 last:border-0 ${opt.danger ? 'text-red-400' : 'text-gray-200'}`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
+ const [openUpward, setOpenUpward] = useState(true);
+
+useEffect(() => {
+  if (menuRef.current) {
+    const rect = menuRef.current.getBoundingClientRect();
+    // If menu would go above the viewport, flip it downward
+    setOpenUpward(rect.top > 0);
+  }
+}, []);
+
+return (
+  <div
+    ref={menuRef}
+    className={`absolute right-3 ${openUpward ? 'bottom-12' : 'top-12'} bg-gray-800 rounded-xl shadow-xl border border-gray-700 z-[9999] w-[calc(100vw-2rem)] max-w-64 overflow-hidden`}
+  >
+    {options.map(opt => (
+      <button
+        key={opt.label}
+        onClick={opt.action}
+        className={`w-full text-left px-4 py-3 text-sm hover:bg-gray-700 border-b border-gray-700 last:border-0 ${opt.danger ? 'text-red-400' : 'text-gray-200'}`}
+      >
+        {opt.label}
+      </button>
+    ))}
+  </div>
+);
 }
 
 function ArticleCard({ article, onHide }) {
