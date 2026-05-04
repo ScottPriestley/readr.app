@@ -112,13 +112,13 @@ function AuthScreen() {
           </div>
 
           <h1 className="text-5xl font-bold text-white mb-3 tracking-tight">Readr</h1>
-          <p className="text-gray-400 text-lg leading-relaxed">News that actually matches<br />what you care about.</p>
+          <p className="text-gray-400 text-lg leading-relaxed">Info you really about.</p>
         </div>
 
         {/* Feature callouts */}
         <div className="flex flex-col gap-3 mb-8">
           {[
-            { icon: '⏱', color: 'bg-blue-500/20', label: 'Fresh every hour', desc: 'Articles from dozens of sources, updated continuously' },
+            { icon: '⏱', color: 'bg-blue-500/20', label: 'Always fresh', desc: 'Articles from dozens of sources, updated continuously' },
             { icon: '✦', color: 'bg-purple-500/20', label: 'Learns what you love', desc: 'The more you use it, the smarter your feed gets' },
             { icon: '✓', color: 'bg-teal-500/20', label: 'No noise, no nonsense', desc: 'Block topics and sources you never want to see' },
           ].map(f => (
