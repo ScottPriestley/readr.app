@@ -68,7 +68,7 @@ const CURATED_TOPICS = [
 // ─── Auth Screen ──────────────────────────────────────────────────────────────
 
 function AuthScreen() {
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -92,48 +92,89 @@ function AuthScreen() {
   }
 
   return (
-    <div className="bg-gray-900 min-h-screen flex flex-col items-center justify-center px-6">
-      <div className="w-full max-w-sm">
-        <h1 className="text-4xl font-bold text-white mb-1">Readr</h1>
-        <p className="text-gray-400 text-sm mb-8">Your personalised news feed</p>
+    <div className="bg-gray-900 min-h-screen flex flex-col items-center justify-center px-6 overflow-hidden relative">
 
-        <div className="flex rounded-xl overflow-hidden border border-gray-700 mb-6">
-          <button
-            onClick={() => setMode('login')}
-            className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'login' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
-          >Sign In</button>
-          <button
-            onClick={() => setMode('signup')}
-            className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'signup' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'}`}
-          >Create Account</button>
+      {/* Giant bolt behind hero */}
+      <img
+        src="/favicon.svg"
+        alt=""
+        className="absolute pointer-events-none select-none"
+        style={{ width: 320, height: 320, top: -40, left: '50%', transform: 'translateX(-50%)', opacity: 0.12 }}
+      />
+
+      <div className="w-full max-w-sm relative z-10">
+
+        {/* Hero */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center gap-2 bg-blue-500/10 border border-blue-500/20 rounded-full px-4 py-1.5 mb-6">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400"></div>
+            <span className="text-xs text-blue-300 tracking-wide">Personalised for you</span>
+          </div>
+
+          <h1 className="text-5xl font-bold text-white mb-3 tracking-tight">Readr</h1>
+          <p className="text-gray-400 text-lg leading-relaxed">News that actually matches<br />what you care about.</p>
         </div>
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          className="w-full bg-gray-800 text-white rounded-xl px-4 py-3 text-sm mb-3 outline-none border border-gray-700 focus:border-blue-500"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={e => setPassword(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          className="w-full bg-gray-800 text-white rounded-xl px-4 py-3 text-sm mb-4 outline-none border border-gray-700 focus:border-blue-500"
-        />
+        {/* Feature callouts */}
+        <div className="flex flex-col gap-3 mb-8">
+          {[
+            { icon: '⏱', color: 'bg-blue-500/20', label: 'Fresh every hour', desc: 'Articles from dozens of sources, updated continuously' },
+            { icon: '✦', color: 'bg-purple-500/20', label: 'Learns what you love', desc: 'The more you use it, the smarter your feed gets' },
+            { icon: '✓', color: 'bg-teal-500/20', label: 'No noise, no nonsense', desc: 'Block topics and sources you never want to see' },
+          ].map(f => (
+            <div key={f.label} className="flex items-center gap-3 bg-white/5 border border-white/8 rounded-xl px-4 py-3">
+              <div className={`w-9 h-9 rounded-lg ${f.color} flex items-center justify-center flex-shrink-0 text-base`}>{f.icon}</div>
+              <div>
+                <p className="text-sm font-medium text-slate-100 mb-0.5">{f.label}</p>
+                <p className="text-xs text-slate-500">{f.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
 
-        {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
-        {success && <p className="text-green-400 text-xs mb-3">{success}</p>}
+        {/* Auth form */}
+        <div className="bg-gray-800 rounded-2xl p-6 border border-white/8">
+          <div className="flex rounded-xl overflow-hidden border border-gray-700 mb-5">
+            <button
+              onClick={() => setMode('login')}
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'login' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            >Sign In</button>
+            <button
+              onClick={() => setMode('signup')}
+              className={`flex-1 py-2 text-sm font-medium transition-colors ${mode === 'signup' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            >Create Account</button>
+          </div>
 
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !email || !password}
-          className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
-        >
-          {loading ? 'Please wait...' : mode === 'signup' ? 'Create Account' : 'Sign In'}
-        </button>
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            className="w-full bg-gray-900 text-white rounded-xl px-4 py-3 text-sm mb-3 outline-none border border-gray-700 focus:border-blue-500"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+            className="w-full bg-gray-900 text-white rounded-xl px-4 py-3 text-sm mb-4 outline-none border border-gray-700 focus:border-blue-500"
+          />
+
+          {error && <p className="text-red-400 text-xs mb-3">{error}</p>}
+          {success && <p className="text-green-400 text-xs mb-3">{success}</p>}
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading || !email || !password}
+            className="w-full disabled:opacity-40 text-white font-semibold rounded-xl py-3 text-sm transition-colors"
+            style={{ background: 'linear-gradient(135deg, #7c3aed, #3b82f6)' }}
+          >
+            {loading ? 'Please wait...' : mode === 'signup' ? 'Create Account' : 'Sign In'}
+          </button>
+
+          <p className="text-xs text-gray-600 text-center mt-4">No ads. No tracking. Just your news.</p>
+        </div>
       </div>
     </div>
   );
