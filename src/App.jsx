@@ -48,15 +48,6 @@ async function normaliseTopics(rawTopics) {
   return data.normalised || rawTopics;
 }
 
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || '[]';
-  try {
-    return JSON.parse(text);
-  } catch {
-    return rawTopics; // fall back to raw input if parsing fails
-  }
-}
-
 function decodeHTML(text) {
   const doc = new DOMParser().parseFromString(text, 'text/html');
   let decoded = doc.documentElement.textContent;
