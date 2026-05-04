@@ -47,20 +47,6 @@ async function normaliseTopics(rawTopics) {
   const data = await response.json();
   return data.normalised || rawTopics;
 }
-Input: ${rawTopics.join(', ')}`;
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${import.meta.env.VITE_OPENROUTER_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'openai/gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-    }),
-  });
 
   const data = await response.json();
   const text = data.choices?.[0]?.message?.content || '[]';
