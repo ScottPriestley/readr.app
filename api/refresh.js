@@ -34,6 +34,7 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
   });
 
   const data = await response.json();
+  console.log('OpenRouter response:', JSON.stringify(data)); // temporary debug
   const text = data.choices?.[0]?.message?.content || '{}';
 
   try {
