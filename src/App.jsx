@@ -111,8 +111,8 @@ function AuthScreen() {
             <span className="text-xs text-blue-300 tracking-wide">Personalised for you</span>
           </div>
 
-          <h1 className="text-5xl font-bold text-white mb-3 tracking-tight">Readr</h1>
-          <p className="text-gray-400 text-lg leading-relaxed">Info you really about.</p>
+          <h1 className="text-5xl font-bold text-white mb-3 tracking-tight">readr app</h1>
+          <p className="text-gray-400 text-lg leading-relaxed">Info you really care about.</p>
         </div>
 
         {/* Feature callouts */}
