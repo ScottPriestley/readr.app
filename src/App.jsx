@@ -625,7 +625,7 @@ function App() {
     <div className="bg-gray-900 min-h-screen">
       <div className="max-w-md mx-auto px-3 py-4">
         <div className="flex items-center justify-between mb-4 px-1">
-          <h1 className="text-2xl font-bold text-white">For You</h1>
+          <h1 className="text-2xl font-bold text-white">Your readr feed</h1>
           <button
             onClick={() => supabase.auth.signOut()}
             className="text-gray-500 text-xs hover:text-gray-300"
