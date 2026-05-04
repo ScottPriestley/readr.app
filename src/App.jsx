@@ -39,11 +39,14 @@ async function updatePreference(userId, topic, source, delta) {
 }
 
 async function normaliseTopics(rawTopics) {
-  // Run freeform user input through the same AI normaliser as article ingestion
-  const prompt = `You are a news topic classifier. Normalise each of these user-entered topic interests into 1-3 clean, reusable topic tag strings (e.g. "artificial intelligence", "NBA", "climate change", "stock market").
-
-Return ONLY a valid JSON array of normalised tag strings, no duplicates, no explanation, no markdown.
-
+  const response = await fetch('/api/normalise-topics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topics: rawTopics }),
+  });
+  const data = await response.json();
+  return data.normalised || rawTopics;
+}
 Input: ${rawTopics.join(', ')}`;
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
