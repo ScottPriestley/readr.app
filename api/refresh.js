@@ -60,8 +60,7 @@ async function fetchFromNewsAPI(query) {
       source: a.source?.name || 'Unknown',
       publish_date: a.publishedAt || null,
     }));
-}
-
+    
 async function fetchFromTheNewsAPI() {
   const url = `https://api.thenewsapi.com/v1/news/all?api_token=${process.env.THENEWSAPI_KEY}&language=en&limit=50`;
   const result = await fetchJSON(url);
@@ -123,3 +122,4 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+}
