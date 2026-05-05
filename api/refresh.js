@@ -10,6 +10,7 @@ const TOP_TOPIC_COUNT = 15;          // How many top user topics to fetch per re
 const PER_TOPIC_PAGE_SIZE = 20;      // Articles per topic from each source
 const FALLBACK_PAGE_SIZE = 30;       // Generic baseline articles
 const MIN_PREFERENCE_SCORE = 0.1;    // Only count topics users actually like
+const INFERENCE_BATCH_SIZE = 25;     // Titles per OpenRouter call — keeps output under token cap
 
 async function fetchJSON(url, label) {
   try {
@@ -107,12 +108,11 @@ async function fetchTheNewsAPIBaseline() {
   return result.data.filter(a => a.url && a.title).map(normalizeTheNewsAPIArticle);
 }
 
-async function inferTopics(articles) {
-  if (articles.length === 0) return {};
-
-  const titles = articles.map(a => a.title).filter(Boolean);
-  console.log(`[inferTopics] Starting inference for ${titles.length} titles`);
-
+/**
+ * Classify a single batch of titles. Returns an object mapping title -> [tags].
+ * Returns {} on any failure so the caller can keep going.
+ */
+async function inferTopicsBatch(titles, batchLabel) {
   const prompt = `You are a news topic classifier. For each article title below, return 2-3 short topic tags that best describe the article. Tags should be specific but reusable (e.g. "artificial intelligence", "NBA", "climate change", "stock market", "electric vehicles").
 
 Return ONLY a valid JSON object where each key is the exact article title and the value is an array of tag strings. No explanation, no markdown, just the JSON object.
@@ -131,56 +131,78 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
         model: 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
-        max_tokens: 8000,
+        max_tokens: 4000,
         response_format: { type: 'json_object' },
       }),
     });
 
-    console.log(`[inferTopics] OpenRouter HTTP ${response.status}`);
-
     if (!response.ok) {
       const errBody = await response.text();
-      console.error(`[inferTopics] OpenRouter error body: ${errBody.slice(0, 500)}`);
+      console.error(`[inferTopics:${batchLabel}] OpenRouter HTTP ${response.status}: ${errBody.slice(0, 300)}`);
       return {};
     }
 
     const data = await response.json();
-    console.log(`[inferTopics] Response keys: ${Object.keys(data).join(', ')}`);
 
     if (data.error) {
-      console.error(`[inferTopics] OpenRouter returned error:`, JSON.stringify(data.error));
+      console.error(`[inferTopics:${batchLabel}] OpenRouter error:`, JSON.stringify(data.error));
       return {};
     }
 
     const text = data.choices?.[0]?.message?.content;
     const finishReason = data.choices?.[0]?.finish_reason;
-    console.log(`[inferTopics] finish_reason: ${finishReason}, content length: ${text?.length || 0}`);
 
     if (!text) {
-      console.error('[inferTopics] No content in response. Full data:', JSON.stringify(data).slice(0, 1000));
+      console.error(`[inferTopics:${batchLabel}] No content. finish_reason: ${finishReason}`);
       return {};
+    }
+
+    if (finishReason !== 'stop') {
+      console.warn(`[inferTopics:${batchLabel}] Non-stop finish_reason: ${finishReason} (output may be truncated)`);
     }
 
     try {
       const parsed = JSON.parse(text);
-      const mappingCount = Object.keys(parsed).length;
-      console.log(`[inferTopics] Parsed successfully: ${mappingCount} mappings for ${titles.length} titles`);
-
-      const sampleKeys = Object.keys(parsed).slice(0, 3);
-      console.log(`[inferTopics] Sample keys returned:`, sampleKeys);
-      console.log(`[inferTopics] Sample input titles:`, titles.slice(0, 3));
-
+      console.log(`[inferTopics:${batchLabel}] OK — ${Object.keys(parsed).length}/${titles.length} titles classified`);
       return parsed;
     } catch (err) {
-      console.error('[inferTopics] JSON parse failed:', err.message);
-      console.error('[inferTopics] Raw text (first 500 chars):', text.slice(0, 500));
-      console.error('[inferTopics] Raw text (last 200 chars):', text.slice(-200));
+      console.error(`[inferTopics:${batchLabel}] Parse failed: ${err.message}`);
+      console.error(`[inferTopics:${batchLabel}] Last 200 chars: ${text.slice(-200)}`);
       return {};
     }
   } catch (err) {
-    console.error('[inferTopics] Request threw:', err.message, err.stack);
+    console.error(`[inferTopics:${batchLabel}] Request threw:`, err.message);
     return {};
   }
+}
+
+/**
+ * Classify all titles by splitting into batches small enough that each
+ * OpenRouter response fits comfortably under the token cap. Batches run
+ * in parallel.
+ */
+async function inferTopics(articles) {
+  if (articles.length === 0) return {};
+
+  const titles = articles.map(a => a.title).filter(Boolean);
+  console.log(`[inferTopics] Classifying ${titles.length} titles in batches of ${INFERENCE_BATCH_SIZE}`);
+
+  const batches = [];
+  for (let i = 0; i < titles.length; i += INFERENCE_BATCH_SIZE) {
+    batches.push(titles.slice(i, i + INFERENCE_BATCH_SIZE));
+  }
+
+  const results = await Promise.all(
+    batches.map((batch, idx) => inferTopicsBatch(batch, `${idx + 1}/${batches.length}`))
+  );
+
+  const merged = {};
+  for (const result of results) {
+    Object.assign(merged, result);
+  }
+
+  console.log(`[inferTopics] Total: ${Object.keys(merged).length}/${titles.length} titles classified across ${batches.length} batches`);
+  return merged;
 }
 
 export default async function handler(req, res) {
