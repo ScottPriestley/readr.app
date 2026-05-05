@@ -567,67 +567,35 @@ function App() {
   const userId = session?.user?.id;
 
   async function fetchArticles(pageNum) {
-    const from = pageNum * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+  try {
+    setError(null);
 
-    const [{ data: articlesData, error }, { data: prefs }] = await Promise.all([
-      supabase.from('articles').select('*').order('created_at', { ascending: false }).range(from, to),
-      supabase.from('user_preferences').select('*').eq('user_id', userId)
-    ]);
+    const response = await fetch(
+      `/api/personalized-feed?user_id=${userId}&page=${pageNum}&page_size=${PAGE_SIZE}`
+    );
 
-    if (error) { setError(error.message); return; }
+    const data = await response.json();
 
-    const topicScores = {};
-    const sourceScores = {};
-    if (prefs) {
-      for (const p of prefs) {
-        if (p.topic) topicScores[p.topic] = p.preference_score;
-        if (p.source) sourceScores[p.source] = p.preference_score;
-      }
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to load personalized feed');
     }
 
-    const filtered = articlesData.filter(a => (sourceScores[a.source] ?? 0) > -1);
+    const personalizedArticles = data.articles || [];
 
-    try {
-      const hasInteractions = prefs && prefs.length > 0;
-      if (hasInteractions) {
-        const rankRes = await fetch(`/api/rank?user_id=${userId}`);
-        const { ranked } = await rankRes.json();
+    setHasMore(Boolean(data.has_more));
 
-        if (ranked && ranked.length > 0) {
-          const articleMap = Object.fromEntries(filtered.map(a => [a.id, a]));
-          const aiRanked = ranked.filter(id => articleMap[id]).map(id => articleMap[id]);
-          const aiRankedIds = new Set(ranked);
-          const remainder = filtered.filter(a => !aiRankedIds.has(a.id));
-          const final = [...aiRanked, ...remainder];
-
-          if (final.length < PAGE_SIZE) setHasMore(false);
-          setArticles(prev => {
-            const existingIds = new Set(prev.map(a => a.id));
-            return [...prev, ...final.filter(a => !existingIds.has(a.id))];
-          });
-          return;
-        }
-      }
-    } catch (e) {
-      console.log('AI ranking failed, using fallback', e);
-    }
-
-    const scored = filtered
-      .map(a => {
-        let score = 0;
-        if (a.topics) for (const t of a.topics) score += topicScores[t] ?? 0;
-        score += sourceScores[a.source] ?? 0;
-        return { ...a, _score: score };
-      })
-      .sort((a, b) => b._score - a._score);
-
-    if (scored.length < PAGE_SIZE) setHasMore(false);
     setArticles(prev => {
       const existingIds = new Set(prev.map(a => a.id));
-      return [...prev, ...scored.filter(a => !existingIds.has(a.id))];
+      return [
+        ...prev,
+        ...personalizedArticles.filter(a => !existingIds.has(a.id)),
+      ];
     });
+  } catch (error) {
+    console.log('Personalized feed failed', error);
+    setError(error.message);
   }
+}
 
   function loadMore() {
     const nextPage = page + 1;
