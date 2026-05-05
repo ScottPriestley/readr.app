@@ -6,11 +6,21 @@ const supabase = createClient(
 );
 
 // Tunables
-const TOP_TOPIC_COUNT = 15;          // How many top user topics to fetch per refresh
-const PER_TOPIC_PAGE_SIZE = 20;      // Articles per topic from each source
-const FALLBACK_PAGE_SIZE = 30;       // Generic baseline articles
-const MIN_PREFERENCE_SCORE = 0.1;    // Only count topics users actually like
-const INFERENCE_BATCH_SIZE = 25;     // Titles per OpenRouter call — keeps output under token cap
+const TOP_TOPIC_COUNT = 15;
+const PER_TOPIC_PAGE_SIZE = 20;
+const FALLBACK_PAGE_SIZE = 30;
+const MIN_PREFERENCE_SCORE = 0.1;
+const INFERENCE_BATCH_SIZE = 25;
+
+// The same curated topics shown during onboarding — the canonical vocabulary.
+// When the AI infers topics, it must prefer these exact strings where relevant.
+const CURATED_TOPICS = [
+  'Technology', 'Artificial Intelligence', 'Science', 'Space', 'Health',
+  'Politics', 'World News', 'Business', 'Finance', 'Stock Market',
+  'Sports', 'NFL', 'NBA', 'Soccer', 'Formula 1',
+  'Climate', 'Environment', 'Entertainment', 'Film', 'Music',
+  'Gaming', 'Food', 'Travel', 'History', 'Law & Crime',
+];
 
 async function fetchJSON(url, label) {
   try {
@@ -48,6 +58,28 @@ async function getTopUserTopics() {
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_TOPIC_COUNT)
     .map(([topic]) => topic);
+}
+
+/**
+ * Get all unique topic strings that exist in user_preferences.
+ * These are the freeform topics users typed during onboarding,
+ * normalised by /api/normalise-topics. Together with CURATED_TOPICS
+ * they form the full canonical vocabulary for inference.
+ */
+async function getUserPreferenceTopics() {
+  const { data, error } = await supabase
+    .from('user_preferences')
+    .select('topic')
+    .not('topic', 'is', null)
+    .gte('preference_score', MIN_PREFERENCE_SCORE);
+
+  if (error) return [];
+
+  const topics = new Set();
+  for (const row of data || []) {
+    if (row.topic) topics.add(row.topic);
+  }
+  return Array.from(topics);
 }
 
 function normalizeNewsAPIArticle(a) {
@@ -109,13 +141,23 @@ async function fetchTheNewsAPIBaseline() {
 }
 
 /**
- * Classify a single batch of titles. Returns an object mapping title -> [tags].
- * Returns {} on any failure so the caller can keep going.
+ * Classify a single batch of titles against the canonical vocabulary.
+ * The key change: the prompt now tells the AI to prefer the exact strings
+ * users have in their preferences, so inference output matches stored prefs.
  */
-async function inferTopicsBatch(titles, batchLabel) {
-  const prompt = `You are a news topic classifier. For each article title below, return 2-3 short topic tags that best describe the article. Tags should be specific but reusable (e.g. "artificial intelligence", "NBA", "climate change", "stock market", "electric vehicles").
+async function inferTopicsBatch(titles, batchLabel, canonicalTopics) {
+  const vocabularyList = canonicalTopics.join(', ');
 
-Return ONLY a valid JSON object where each key is the exact article title and the value is an array of tag strings. No explanation, no markdown, just the JSON object.
+  const prompt = `You are a news topic classifier. For each article title, assign 2-3 topic tags.
+
+IMPORTANT: You must use the canonical topic vocabulary below wherever it fits. Only invent a new tag if none of the canonical topics apply.
+
+Canonical topics (use these exact strings):
+${vocabularyList}
+
+For each title, return the best matching canonical topics first. If a canonical topic clearly applies, you MUST use the exact canonical string (e.g. use "Artificial Intelligence" not "AI", use "Formula 1" not "F1", use "Stock Market" not "stocks").
+
+Return ONLY a valid JSON object where each key is the exact article title and the value is an array of tag strings. No explanation, no markdown.
 
 Titles:
 ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
@@ -130,7 +172,7 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0.2,
+        temperature: 0,        // Zero temp = consistent, deterministic tag strings
         max_tokens: 4000,
         response_format: { type: 'json_object' },
       }),
@@ -177,12 +219,20 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
 }
 
 /**
- * Classify all titles by splitting into batches small enough that each
- * OpenRouter response fits comfortably under the token cap. Batches run
- * in parallel.
+ * Classify all titles. Fetches the live user preference vocabulary
+ * so inference always matches what users have actually selected.
  */
 async function inferTopics(articles) {
   if (articles.length === 0) return {};
+
+  // Build canonical vocabulary: curated topics + any freeform topics
+  // users have added via onboarding. This is the single source of truth.
+  const userTopics = await getUserPreferenceTopics();
+  const canonicalTopics = [
+    ...new Set([...CURATED_TOPICS, ...userTopics])
+  ];
+
+  console.log(`[inferTopics] Canonical vocabulary: ${canonicalTopics.length} topics`);
 
   const titles = articles.map(a => a.title).filter(Boolean);
   console.log(`[inferTopics] Classifying ${titles.length} titles in batches of ${INFERENCE_BATCH_SIZE}`);
@@ -193,7 +243,9 @@ async function inferTopics(articles) {
   }
 
   const results = await Promise.all(
-    batches.map((batch, idx) => inferTopicsBatch(batch, `${idx + 1}/${batches.length}`))
+    batches.map((batch, idx) =>
+      inferTopicsBatch(batch, `${idx + 1}/${batches.length}`, canonicalTopics)
+    )
   );
 
   const merged = {};
