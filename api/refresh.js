@@ -45,7 +45,7 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
 }
 
 async function fetchFromNewsAPI() {
-  const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=50&apiKey=${process.env.NEWSAPI_KEY}`;
+  const url = `https://newsapi.org/v2/all?language=en&pageSize=50&apiKey=${process.env.NEWSAPI_KEY}`;
   const result = await fetchJSON(url);
   if (!result || result.status !== 'ok') return [];
 
@@ -62,7 +62,7 @@ async function fetchFromNewsAPI() {
 }
 
 async function fetchFromTheNewsAPI() {
-  const url = `https://api.thenewsapi.com/v1/news/top?api_token=${process.env.THENEWSAPI_KEY}&language=en&limit=50`;
+  const url = `https://api.thenewsapi.com/v1/news/all?api_token=${process.env.THENEWSAPI_KEY}&language=en&limit=50`;
   const result = await fetchJSON(url);
   if (!result || !result.data) return [];
 
