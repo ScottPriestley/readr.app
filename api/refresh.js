@@ -25,10 +25,6 @@ async function fetchJSON(url, label) {
   }
 }
 
-/**
- * Get the top N topics across all users, weighted by preference score.
- * Returns an array of topic strings, or [] if no preferences exist yet.
- */
 async function getTopUserTopics() {
   const { data, error } = await supabase
     .from('user_preferences')
@@ -41,14 +37,12 @@ async function getTopUserTopics() {
     return [];
   }
 
-  // Aggregate scores per topic across all users
   const topicScores = new Map();
   for (const row of data || []) {
     const current = topicScores.get(row.topic) || 0;
     topicScores.set(row.topic, current + row.preference_score);
   }
 
-  // Sort by aggregate score, take top N
   return Array.from(topicScores.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, TOP_TOPIC_COUNT)
@@ -117,6 +111,7 @@ async function inferTopics(articles) {
   if (articles.length === 0) return {};
 
   const titles = articles.map(a => a.title).filter(Boolean);
+  console.log(`[inferTopics] Starting inference for ${titles.length} titles`);
 
   const prompt = `You are a news topic classifier. For each article title below, return 2-3 short topic tags that best describe the article. Tags should be specific but reusable (e.g. "artificial intelligence", "NBA", "climate change", "stock market", "electric vehicles").
 
@@ -136,38 +131,68 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
         model: 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.2,
+        max_tokens: 8000,
         response_format: { type: 'json_object' },
       }),
     });
 
+    console.log(`[inferTopics] OpenRouter HTTP ${response.status}`);
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      console.error(`[inferTopics] OpenRouter error body: ${errBody.slice(0, 500)}`);
+      return {};
+    }
+
     const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '{}';
+    console.log(`[inferTopics] Response keys: ${Object.keys(data).join(', ')}`);
+
+    if (data.error) {
+      console.error(`[inferTopics] OpenRouter returned error:`, JSON.stringify(data.error));
+      return {};
+    }
+
+    const text = data.choices?.[0]?.message?.content;
+    const finishReason = data.choices?.[0]?.finish_reason;
+    console.log(`[inferTopics] finish_reason: ${finishReason}, content length: ${text?.length || 0}`);
+
+    if (!text) {
+      console.error('[inferTopics] No content in response. Full data:', JSON.stringify(data).slice(0, 1000));
+      return {};
+    }
 
     try {
-      return JSON.parse(text);
-    } catch {
-      console.error('Topic inference failed to parse:', text.slice(0, 500));
+      const parsed = JSON.parse(text);
+      const mappingCount = Object.keys(parsed).length;
+      console.log(`[inferTopics] Parsed successfully: ${mappingCount} mappings for ${titles.length} titles`);
+
+      const sampleKeys = Object.keys(parsed).slice(0, 3);
+      console.log(`[inferTopics] Sample keys returned:`, sampleKeys);
+      console.log(`[inferTopics] Sample input titles:`, titles.slice(0, 3));
+
+      return parsed;
+    } catch (err) {
+      console.error('[inferTopics] JSON parse failed:', err.message);
+      console.error('[inferTopics] Raw text (first 500 chars):', text.slice(0, 500));
+      console.error('[inferTopics] Raw text (last 200 chars):', text.slice(-200));
       return {};
     }
   } catch (err) {
-    console.error('Topic inference request failed:', err.message);
+    console.error('[inferTopics] Request threw:', err.message, err.stack);
     return {};
   }
 }
 
 export default async function handler(req, res) {
   try {
-    // 1. Pull top topics that real users care about
     const topUserTopics = await getTopUserTopics();
     console.log(`Top user topics (${topUserTopics.length}):`, topUserTopics);
 
-    // 2. Fetch articles per topic from both sources, in parallel
     const topicFetches = topUserTopics.flatMap(topic => [
       fetchNewsAPIByTopic(topic),
       fetchTheNewsAPIByTopic(topic),
     ]);
 
-    // 3. Also fetch a generic baseline so new users (no preferences yet) see something
     const baselineFetches = [
       fetchNewsAPIBaseline(),
       fetchTheNewsAPIBaseline(),
@@ -175,7 +200,6 @@ export default async function handler(req, res) {
 
     const allResults = await Promise.all([...topicFetches, ...baselineFetches]);
 
-    // 4. Merge, dedupe by URL
     const seen = new Set();
     const allArticles = [];
     for (const batch of allResults) {
@@ -193,14 +217,15 @@ export default async function handler(req, res) {
 
     console.log(`Fetched ${allArticles.length} unique articles across ${topUserTopics.length} topics + baseline`);
 
-    // 5. Infer topics for everything in one batch
     const topicMap = await inferTopics(allArticles);
 
-    // 6. Upsert. We use ignoreDuplicates so existing rows aren't reclassified every hour.
     let inserted = 0;
     let failed = 0;
+    let usedFallback = 0;
     for (const item of allArticles) {
-      const topics = topicMap[item.title] || ['news'];
+      const inferred = topicMap[item.title];
+      const topics = inferred || ['news'];
+      if (!inferred) usedFallback++;
       const { error } = await supabase
         .from('articles')
         .upsert({ ...item, topics }, { onConflict: 'url', ignoreDuplicates: true });
@@ -212,11 +237,14 @@ export default async function handler(req, res) {
       }
     }
 
+    console.log(`Upsert summary: ${inserted} ok, ${failed} failed, ${usedFallback} used 'news' fallback`);
+
     res.status(200).json({
       success: true,
       articles_processed: allArticles.length,
       upserts_ok: inserted,
       upserts_failed: failed,
+      used_news_fallback: usedFallback,
       topics_used: topUserTopics,
     });
   } catch (err) {
