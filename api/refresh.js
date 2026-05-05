@@ -15,11 +15,11 @@ const INFERENCE_BATCH_SIZE = 25;
 // The same curated topics shown during onboarding — the canonical vocabulary.
 // When the AI infers topics, it must prefer these exact strings where relevant.
 const CURATED_TOPICS = [
-  'Technology', 'Artificial Intelligence', 'Science', 'Space', 'Health',
-  'Politics', 'World News', 'Business', 'Finance', 'Stock Market',
-  'Sports', 'NFL', 'NBA', 'Soccer', 'Formula 1',
-  'Climate', 'Environment', 'Entertainment', 'Film', 'Music',
-  'Gaming', 'Food', 'Travel', 'History', 'Law & Crime',
+  'technology', 'artificial intelligence', 'science', 'space', 'health',
+  'politics', 'world news', 'business', 'finance', 'stock market',
+  'sports', 'nfl', 'nba', 'soccer', 'formula 1',
+  'climate', 'environment', 'entertainment', 'film', 'music',
+  'gaming', 'food', 'travel', 'history', 'law & crime',
 ];
 
 async function fetchJSON(url, label) {
