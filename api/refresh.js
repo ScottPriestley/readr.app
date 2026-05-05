@@ -44,8 +44,9 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
   }
 }
 
-async function fetchFromNewsAPI() {
-  const url = `https://newsapi.org/v2/all?language=en&pageSize=50&apiKey=${process.env.NEWSAPI_KEY}`;
+async function fetchFromNewsAPI(query) {
+  const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&language=en&sortBy=publishedAt&pageSize=50&apiKey=${process.env.NEWSAPI_KEY}`;
+}
   const result = await fetchJSON(url);
   if (!result || result.status !== 'ok') return [];
 
@@ -122,4 +123,3 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-}
