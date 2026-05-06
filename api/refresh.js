@@ -11,6 +11,8 @@ const TOP_TOPIC_COUNT = 15;
 const PER_TOPIC_LIMIT = 20;
 const INFERENCE_BATCH_SIZE = 25;
 const MIN_PREFERENCE_SCORE = 0.1;
+const IMAGE_FETCH_CONCURRENCY = 10;  // How many og:image fetches to run in parallel
+const IMAGE_FETCH_TIMEOUT_MS = 3000; // Give each site 3 seconds to respond
 
 // The same curated topics shown during onboarding — the canonical vocabulary.
 const CURATED_TOPICS = [
@@ -21,14 +23,16 @@ const CURATED_TOPICS = [
   'gaming', 'food', 'travel', 'history', 'law & crime',
 ];
 
-// Google News static category feed IDs — these never change
+// Google News category feeds
 const CATEGORY_FEEDS = [
-  { label: 'Technology',     url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDSWhJbktrb0lMVkJRU0JBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Top Stories',    url: 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Technology',     url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDSWhJbktrb0lMVkJRU0pBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
   { label: 'Business',       url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDSWhJbktrb0lMVkJRU0JBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
-  { label: 'Science',        url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0JBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Science',        url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
   { label: 'Health',         url: 'https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ?hl=en-US&gl=US&ceid=US:en' },
-  { label: 'Sports',         url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Sports',         url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dOQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
   { label: 'Entertainment',  url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'World',          url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dOQ1JBQQ?hl=en-US&gl=US&ceid=US:en' },
 ];
 
 // ─── RSS Fetching ──────────────────────────────────────────────────────────────
@@ -37,15 +41,19 @@ async function fetchRSSFeed(url, label) {
   try {
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; Readr/1.0)',
-        'Accept': 'application/rss+xml, application/xml, text/xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
       },
+      redirect: 'follow',
     });
+    console.log(`[RSS:${label}] HTTP ${res.status} content-type: ${res.headers.get('content-type')}`);
     if (!res.ok) {
       console.error(`[RSS:${label}] HTTP ${res.status}: ${res.statusText}`);
       return [];
     }
     const xml = await res.text();
+    console.log(`[RSS:${label}] Response preview: ${xml.slice(0, 200).replace(/\n/g, ' ')}`);
     return parseRSSItems(xml, label);
   } catch (err) {
     console.error(`[RSS:${label}] fetch failed:`, err.message);
@@ -75,17 +83,12 @@ function parseRSSItems(xml, label) {
 }
 
 function normalizeRSSItem(item) {
-  // Google News RSS uses <source url="..."> for the publisher name
   const sourceName = typeof item.source === 'object'
     ? (item.source['#text'] || item.source['_'] || 'Unknown')
     : (item.source || 'Unknown');
 
-  // Strip Google News redirect URLs — extract the real article URL from the guid
-  // Google News guids look like: https://news.google.com/rss/articles/...
-  // The actual article link is in <link>
   const url = item.link || item.guid?.['#text'] || item.guid || null;
 
-  // Remove HTML tags from description if present
   const summary = item.description
     ? String(item.description).replace(/<[^>]+>/g, '').trim() || null
     : null;
@@ -109,12 +112,90 @@ function extractDomain(url) {
   }
 }
 
-// ─── Google News RSS Sources ───────────────────────────────────────────────────
+// ─── og:image Fetching ─────────────────────────────────────────────────────────
 
 /**
- * Fetch a Google News search feed for a specific topic query.
- * Returns up to PER_TOPIC_LIMIT articles.
+ * Fetch the og:image for a single article URL.
+ * Returns the image URL string, or null if not found / timed out.
  */
+async function fetchOgImage(articleUrl) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS);
+
+    const res = await fetch(articleUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+      },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timer);
+
+    if (!res.ok) return null;
+
+    // Only read the first 20KB — the <head> is always near the top,
+    // no need to download the entire article page
+    const reader = res.body.getReader();
+    let html = '';
+    let bytesRead = 0;
+    while (bytesRead < 20000) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      html += new TextDecoder().decode(value);
+      bytesRead += value.length;
+      // Stop as soon as we've passed </head> — no point reading further
+      if (html.includes('</head>')) break;
+    }
+    reader.cancel();
+
+    // Extract og:image content attribute
+    const match = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+      || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+
+    return match?.[1] || null;
+  } catch {
+    // Timeout, network error, etc — silently skip
+    return null;
+  }
+}
+
+/**
+ * Run og:image fetches for all articles that don't already have an image,
+ * using a concurrency limit so we don't hammer the network.
+ * Mutates the image_url field on each article object in place.
+ */
+async function enrichWithImages(articles) {
+  const needsImage = articles.filter(a => !a.image_url);
+  if (needsImage.length === 0) {
+    console.log('[images] All articles already have images, skipping fetch');
+    return;
+  }
+
+  console.log(`[images] Fetching og:image for ${needsImage.length} articles (concurrency: ${IMAGE_FETCH_CONCURRENCY})`);
+  let fetched = 0;
+  let found = 0;
+
+  // Process in chunks of IMAGE_FETCH_CONCURRENCY
+  for (let i = 0; i < needsImage.length; i += IMAGE_FETCH_CONCURRENCY) {
+    const chunk = needsImage.slice(i, i + IMAGE_FETCH_CONCURRENCY);
+    const results = await Promise.all(chunk.map(a => fetchOgImage(a.url)));
+    for (let j = 0; j < chunk.length; j++) {
+      if (results[j]) {
+        chunk[j].image_url = results[j];
+        found++;
+      }
+      fetched++;
+    }
+  }
+
+  console.log(`[images] Done — found images for ${found}/${fetched} articles`);
+}
+
+// ─── Google News RSS Sources ───────────────────────────────────────────────────
+
 async function fetchTopicFeed(topic) {
   const q = encodeURIComponent(topic);
   const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
@@ -122,9 +203,6 @@ async function fetchTopicFeed(topic) {
   return articles.slice(0, PER_TOPIC_LIMIT);
 }
 
-/**
- * Fetch all six Google News category feeds for broad baseline coverage.
- */
 async function fetchCategoryFeeds() {
   const results = await Promise.all(
     CATEGORY_FEEDS.map(({ label, url }) => fetchRSSFeed(url, `category:${label}`))
@@ -132,7 +210,7 @@ async function fetchCategoryFeeds() {
   return results.flat();
 }
 
-// ─── User Preference Helpers (unchanged) ──────────────────────────────────────
+// ─── User Preference Helpers ───────────────────────────────────────────────────
 
 async function getTopUserTopics() {
   const { data, error } = await supabase
@@ -174,7 +252,7 @@ async function getUserPreferenceTopics() {
   return Array.from(topics);
 }
 
-// ─── Topic Inference (unchanged) ──────────────────────────────────────────────
+// ─── Topic Inference ───────────────────────────────────────────────────────────
 
 async function inferTopicsBatch(titles, batchLabel, canonicalTopics) {
   const vocabularyList = canonicalTopics.join(', ');
@@ -291,7 +369,7 @@ export default async function handler(req, res) {
       fetchCategoryFeeds(),
     ]);
 
-    // Deduplicate across all sources
+    // Deduplicate across all sources by URL
     const seen = new Set();
     const allArticles = [];
     for (const article of [...topicResults.flat(), ...categoryArticles]) {
@@ -307,16 +385,23 @@ export default async function handler(req, res) {
 
     console.log(`Fetched ${allArticles.length} unique articles (${topUserTopics.length} topic feeds + ${CATEGORY_FEEDS.length} category feeds)`);
 
-    const topicMap = await inferTopics(allArticles);
+    // Run topic inference and og:image fetching in parallel —
+    // they don't depend on each other so no need to wait for one before the other
+    const [topicMap] = await Promise.all([
+      inferTopics(allArticles),
+      enrichWithImages(allArticles),  // mutates image_url on each article in place
+    ]);
 
     let inserted = 0;
     let failed = 0;
     let usedFallback = 0;
+    let hasImage = 0;
 
     for (const item of allArticles) {
       const inferred = topicMap[item.title];
       const topics = inferred || ['news'];
       if (!inferred) usedFallback++;
+      if (item.image_url) hasImage++;
 
       const { error } = await supabase
         .from('articles')
@@ -330,7 +415,7 @@ export default async function handler(req, res) {
       }
     }
 
-    console.log(`Upsert summary: ${inserted} ok, ${failed} failed, ${usedFallback} used 'news' fallback`);
+    console.log(`Upsert summary: ${inserted} ok, ${failed} failed, ${usedFallback} used 'news' fallback, ${hasImage} with images`);
 
     res.status(200).json({
       success: true,
@@ -338,6 +423,7 @@ export default async function handler(req, res) {
       upserts_ok: inserted,
       upserts_failed: failed,
       used_news_fallback: usedFallback,
+      articles_with_images: hasImage,
       topics_used: topUserTopics,
     });
   } catch (err) {
