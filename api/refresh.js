@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { XMLParser } from 'fast-xml-parser';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -7,13 +8,11 @@ const supabase = createClient(
 
 // Tunables
 const TOP_TOPIC_COUNT = 15;
-const PER_TOPIC_PAGE_SIZE = 20;
-const FALLBACK_PAGE_SIZE = 30;
-const MIN_PREFERENCE_SCORE = 0.1;
+const PER_TOPIC_LIMIT = 20;
 const INFERENCE_BATCH_SIZE = 25;
+const MIN_PREFERENCE_SCORE = 0.1;
 
 // The same curated topics shown during onboarding — the canonical vocabulary.
-// When the AI infers topics, it must prefer these exact strings where relevant.
 const CURATED_TOPICS = [
   'technology', 'artificial intelligence', 'science', 'space', 'health',
   'politics', 'world news', 'business', 'finance', 'stock market',
@@ -22,19 +21,118 @@ const CURATED_TOPICS = [
   'gaming', 'food', 'travel', 'history', 'law & crime',
 ];
 
-async function fetchJSON(url, label) {
+// Google News static category feed IDs — these never change
+const CATEGORY_FEEDS = [
+  { label: 'Technology',     url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDSWhJbktrb0lMVkJRU0JBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Business',       url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDSWhJbktrb0lMVkJRU0JBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Science',        url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0JBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Health',         url: 'https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR3QwTlRFU0FtVnVLQUFQAQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Sports',         url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+  { label: 'Entertainment',  url: 'https://news.google.com/rss/topics/CAAqJggKIiBDBkFTQkFDU2hJbktrb0lMVkJRU0pBY2dNQ1FBQQ?hl=en-US&gl=US&ceid=US:en' },
+];
+
+// ─── RSS Fetching ──────────────────────────────────────────────────────────────
+
+async function fetchRSSFeed(url, label) {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; Readr/1.0)',
+        'Accept': 'application/rss+xml, application/xml, text/xml',
+      },
+    });
     if (!res.ok) {
-      console.error(`[${label}] HTTP ${res.status}: ${res.statusText}`);
-      return null;
+      console.error(`[RSS:${label}] HTTP ${res.status}: ${res.statusText}`);
+      return [];
     }
-    return await res.json();
+    const xml = await res.text();
+    return parseRSSItems(xml, label);
   } catch (err) {
-    console.error(`[${label}] fetch failed:`, err.message);
+    console.error(`[RSS:${label}] fetch failed:`, err.message);
+    return [];
+  }
+}
+
+function parseRSSItems(xml, label) {
+  try {
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    const parsed = parser.parse(xml);
+    const items = parsed?.rss?.channel?.item;
+    if (!items) {
+      console.warn(`[RSS:${label}] No items found in feed`);
+      return [];
+    }
+    const itemArray = Array.isArray(items) ? items : [items];
+    const articles = itemArray
+      .map(item => normalizeRSSItem(item))
+      .filter(a => a.url && a.title);
+    console.log(`[RSS:${label}] ${articles.length} articles parsed`);
+    return articles;
+  } catch (err) {
+    console.error(`[RSS:${label}] parse failed:`, err.message);
+    return [];
+  }
+}
+
+function normalizeRSSItem(item) {
+  // Google News RSS uses <source url="..."> for the publisher name
+  const sourceName = typeof item.source === 'object'
+    ? (item.source['#text'] || item.source['_'] || 'Unknown')
+    : (item.source || 'Unknown');
+
+  // Strip Google News redirect URLs — extract the real article URL from the guid
+  // Google News guids look like: https://news.google.com/rss/articles/...
+  // The actual article link is in <link>
+  const url = item.link || item.guid?.['#text'] || item.guid || null;
+
+  // Remove HTML tags from description if present
+  const summary = item.description
+    ? String(item.description).replace(/<[^>]+>/g, '').trim() || null
+    : null;
+
+  return {
+    url: typeof url === 'string' ? url.trim() : null,
+    title: item.title ? String(item.title).trim() : null,
+    summary,
+    image_url: item.enclosure?.['@_url'] || item['media:content']?.['@_url'] || null,
+    source: sourceName,
+    source_url: extractDomain(typeof url === 'string' ? url : ''),
+    publish_date: item.pubDate ? new Date(item.pubDate).toISOString() : null,
+  };
+}
+
+function extractDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
     return null;
   }
 }
+
+// ─── Google News RSS Sources ───────────────────────────────────────────────────
+
+/**
+ * Fetch a Google News search feed for a specific topic query.
+ * Returns up to PER_TOPIC_LIMIT articles.
+ */
+async function fetchTopicFeed(topic) {
+  const q = encodeURIComponent(topic);
+  const url = `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`;
+  const articles = await fetchRSSFeed(url, `topic:${topic}`);
+  return articles.slice(0, PER_TOPIC_LIMIT);
+}
+
+/**
+ * Fetch all six Google News category feeds for broad baseline coverage.
+ */
+async function fetchCategoryFeeds() {
+  const results = await Promise.all(
+    CATEGORY_FEEDS.map(({ label, url }) => fetchRSSFeed(url, `category:${label}`))
+  );
+  return results.flat();
+}
+
+// ─── User Preference Helpers (unchanged) ──────────────────────────────────────
 
 async function getTopUserTopics() {
   const { data, error } = await supabase
@@ -60,12 +158,6 @@ async function getTopUserTopics() {
     .map(([topic]) => topic);
 }
 
-/**
- * Get all unique topic strings that exist in user_preferences.
- * These are the freeform topics users typed during onboarding,
- * normalised by /api/normalise-topics. Together with CURATED_TOPICS
- * they form the full canonical vocabulary for inference.
- */
 async function getUserPreferenceTopics() {
   const { data, error } = await supabase
     .from('user_preferences')
@@ -82,69 +174,8 @@ async function getUserPreferenceTopics() {
   return Array.from(topics);
 }
 
-function normalizeNewsAPIArticle(a) {
-  return {
-    url: a.url,
-    title: a.title,
-    summary: a.description || null,
-    image_url: a.urlToImage || null,
-    source: a.source?.name || 'Unknown',
-    publish_date: a.publishedAt || null,
-  };
-}
+// ─── Topic Inference (unchanged) ──────────────────────────────────────────────
 
-function normalizeTheNewsAPIArticle(a) {
-  return {
-    url: a.url,
-    title: a.title,
-    summary: a.description || null,
-    image_url: a.image_url || null,
-    source: a.source || 'Unknown',
-    publish_date: a.published_at || null,
-  };
-}
-
-async function fetchNewsAPIByTopic(topic) {
-  const q = encodeURIComponent(topic);
-  const url = `https://newsapi.org/v2/everything?q=${q}&language=en&sortBy=publishedAt&pageSize=${PER_TOPIC_PAGE_SIZE}&apiKey=${process.env.NEWSAPI_KEY}`;
-  const result = await fetchJSON(url, `NewsAPI:${topic}`);
-  if (!result || result.status !== 'ok' || !Array.isArray(result.articles)) {
-    if (result?.message) console.error(`[NewsAPI:${topic}] ${result.message}`);
-    return [];
-  }
-  return result.articles.filter(a => a.url && a.title).map(normalizeNewsAPIArticle);
-}
-
-async function fetchNewsAPIBaseline() {
-  const url = `https://newsapi.org/v2/top-headlines?country=us&pageSize=${FALLBACK_PAGE_SIZE}&apiKey=${process.env.NEWSAPI_KEY}`;
-  const result = await fetchJSON(url, 'NewsAPI:baseline');
-  if (!result || result.status !== 'ok' || !Array.isArray(result.articles)) {
-    if (result?.message) console.error(`[NewsAPI:baseline] ${result.message}`);
-    return [];
-  }
-  return result.articles.filter(a => a.url && a.title).map(normalizeNewsAPIArticle);
-}
-
-async function fetchTheNewsAPIByTopic(topic) {
-  const q = encodeURIComponent(topic);
-  const url = `https://api.thenewsapi.com/v1/news/all?api_token=${process.env.THENEWSAPI_KEY}&language=en&search=${q}&limit=${PER_TOPIC_PAGE_SIZE}`;
-  const result = await fetchJSON(url, `TheNewsAPI:${topic}`);
-  if (!result || !Array.isArray(result.data)) return [];
-  return result.data.filter(a => a.url && a.title).map(normalizeTheNewsAPIArticle);
-}
-
-async function fetchTheNewsAPIBaseline() {
-  const url = `https://api.thenewsapi.com/v1/news/top?api_token=${process.env.THENEWSAPI_KEY}&language=en&limit=${FALLBACK_PAGE_SIZE}`;
-  const result = await fetchJSON(url, 'TheNewsAPI:baseline');
-  if (!result || !Array.isArray(result.data)) return [];
-  return result.data.filter(a => a.url && a.title).map(normalizeTheNewsAPIArticle);
-}
-
-/**
- * Classify a single batch of titles against the canonical vocabulary.
- * The key change: the prompt now tells the AI to prefer the exact strings
- * users have in their preferences, so inference output matches stored prefs.
- */
 async function inferTopicsBatch(titles, batchLabel, canonicalTopics) {
   const vocabularyList = canonicalTopics.join(', ');
 
@@ -155,7 +186,7 @@ IMPORTANT: You must use the canonical topic vocabulary below wherever it fits. O
 Canonical topics (use these exact strings):
 ${vocabularyList}
 
-For each title, return the best matching canonical topics first. If a canonical topic clearly applies, you MUST use the exact canonical string (e.g. use "Artificial Intelligence" not "AI", use "Formula 1" not "F1", use "Stock Market" not "stocks").
+For each title, return the best matching canonical topics first. If a canonical topic clearly applies, you MUST use the exact canonical string (e.g. use "artificial intelligence" not "AI", use "formula 1" not "F1", use "stock market" not "stocks").
 
 Return ONLY a valid JSON object where each key is the exact article title and the value is an array of tag strings. No explanation, no markdown.
 
@@ -172,7 +203,7 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
       body: JSON.stringify({
         model: 'openai/gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
-        temperature: 0,        // Zero temp = consistent, deterministic tag strings
+        temperature: 0,
         max_tokens: 4000,
         response_format: { type: 'json_object' },
       }),
@@ -218,19 +249,11 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
   }
 }
 
-/**
- * Classify all titles. Fetches the live user preference vocabulary
- * so inference always matches what users have actually selected.
- */
 async function inferTopics(articles) {
   if (articles.length === 0) return {};
 
-  // Build canonical vocabulary: curated topics + any freeform topics
-  // users have added via onboarding. This is the single source of truth.
   const userTopics = await getUserPreferenceTopics();
-  const canonicalTopics = [
-    ...new Set([...CURATED_TOPICS, ...userTopics])
-  ];
+  const canonicalTopics = [...new Set([...CURATED_TOPICS, ...userTopics])];
 
   console.log(`[inferTopics] Canonical vocabulary: ${canonicalTopics.length} topics`);
 
@@ -249,60 +272,56 @@ async function inferTopics(articles) {
   );
 
   const merged = {};
-  for (const result of results) {
-    Object.assign(merged, result);
-  }
+  for (const result of results) Object.assign(merged, result);
 
   console.log(`[inferTopics] Total: ${Object.keys(merged).length}/${titles.length} titles classified across ${batches.length} batches`);
   return merged;
 }
+
+// ─── Main Handler ──────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   try {
     const topUserTopics = await getTopUserTopics();
     console.log(`Top user topics (${topUserTopics.length}):`, topUserTopics);
 
-    const topicFetches = topUserTopics.flatMap(topic => [
-      fetchNewsAPIByTopic(topic),
-      fetchTheNewsAPIByTopic(topic),
+    // Fetch topic-specific feeds + broad category feeds in parallel
+    const [topicResults, categoryArticles] = await Promise.all([
+      Promise.all(topUserTopics.map(topic => fetchTopicFeed(topic))),
+      fetchCategoryFeeds(),
     ]);
 
-    const baselineFetches = [
-      fetchNewsAPIBaseline(),
-      fetchTheNewsAPIBaseline(),
-    ];
-
-    const allResults = await Promise.all([...topicFetches, ...baselineFetches]);
-
+    // Deduplicate across all sources
     const seen = new Set();
     const allArticles = [];
-    for (const batch of allResults) {
-      for (const article of batch) {
-        if (seen.has(article.url)) continue;
-        seen.add(article.url);
-        allArticles.push(article);
-      }
+    for (const article of [...topicResults.flat(), ...categoryArticles]) {
+      if (!article.url || seen.has(article.url)) continue;
+      seen.add(article.url);
+      allArticles.push(article);
     }
 
     if (allArticles.length === 0) {
-      console.error('No articles fetched from any source — check API keys and endpoints');
+      console.error('No articles fetched — Google News RSS may be unreachable');
       return res.status(500).json({ error: 'No articles fetched from any source' });
     }
 
-    console.log(`Fetched ${allArticles.length} unique articles across ${topUserTopics.length} topics + baseline`);
+    console.log(`Fetched ${allArticles.length} unique articles (${topUserTopics.length} topic feeds + ${CATEGORY_FEEDS.length} category feeds)`);
 
     const topicMap = await inferTopics(allArticles);
 
     let inserted = 0;
     let failed = 0;
     let usedFallback = 0;
+
     for (const item of allArticles) {
       const inferred = topicMap[item.title];
       const topics = inferred || ['news'];
       if (!inferred) usedFallback++;
+
       const { error } = await supabase
         .from('articles')
         .upsert({ ...item, topics }, { onConflict: 'url', ignoreDuplicates: true });
+
       if (error) {
         failed++;
         console.error(`Upsert failed for ${item.url}:`, error.message);
